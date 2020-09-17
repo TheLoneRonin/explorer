@@ -6,6 +6,7 @@ import {
   TransactionSignature,
   Connection,
 } from "@solana/web3.js";
+import { RetrieveBlockByBlockhash, RetrieveBlocksFromAccount, RetrieveBlockData } from '@theronin/solarweave';
 import { useCluster, Cluster } from "../cluster";
 import * as Cache from "providers/cache";
 import { ActionType, FetchStatus } from "providers/cache";
@@ -80,7 +81,7 @@ async function fetchAccountHistory(
   pubkey: PublicKey,
   cluster: Cluster,
   url: string,
-  options: { before?: TransactionSignature; limit: number }
+  options: { before?: TransactionSignature; start?: number; limit: number }
 ) {
   dispatch({
     type: ActionType.Update,
@@ -91,23 +92,47 @@ async function fetchAccountHistory(
 
   let status;
   let history;
+  
   try {
+    const startingIndex = options.start ? options.start : 0;
+    const fetched = [];
+    const Blocks = await RetrieveBlocksFromAccount(pubkey.toString(), 'solarweave-explorer-test-index');
+
+    for (let i = startingIndex; i < Blocks.length && i < (startingIndex + options.limit); i++) {
+      const metadata = await RetrieveBlockData(Blocks[i]);
+
+      fetched.push({
+        err: null,
+        memo: null,
+        signature: metadata.defaultSignature,
+        slot: Number(metadata.slot),
+      });
+    }
+    
+    /*
     const connection = new Connection(url);
     const fetched = await connection.getConfirmedSignaturesForAddress2(
       pubkey,
       options
     );
+    */
+
     history = {
       fetched,
       foundOldest: fetched.length < options.limit,
     };
+
+    console.log(history)
+
     status = FetchStatus.Fetched;
   } catch (error) {
+    console.log(error);
     if (cluster !== Cluster.Custom) {
-      Sentry.captureException(error, { tags: { url } });
+      // Sentry.captureException(error, { tags: { url } });
     }
     status = FetchStatus.FetchFailed;
   }
+
   dispatch({
     type: ActionType.Update,
     url,
@@ -163,10 +188,11 @@ export function useFetchAccountHistory() {
           before.data.fetched[before.data.fetched.length - 1].signature;
         fetchAccountHistory(dispatch, pubkey, cluster, url, {
           before: oldest,
-          limit: 25,
+          start: before.data.fetched.length,
+          limit: 5,
         });
       } else {
-        fetchAccountHistory(dispatch, pubkey, cluster, url, { limit: 25 });
+        fetchAccountHistory(dispatch, pubkey, cluster, url, { limit: 5 });
       }
     },
     [state, dispatch, cluster, url]
