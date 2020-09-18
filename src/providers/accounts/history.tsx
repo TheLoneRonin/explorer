@@ -96,7 +96,7 @@ async function fetchAccountHistory(
   try {
     const startingIndex = options.start ? options.start : 0;
     const fetched = [];
-    const Blocks = await RetrieveBlocksFromAccount(pubkey.toString(), 'solarweave-explorer-test-index');
+    const Blocks = await RetrieveBlocksFromAccount(pubkey.toString(), 'solarweave-explorer-test2-index');
 
     for (let i = startingIndex; i < Blocks.length && i < (startingIndex + options.limit); i++) {
       const metadata = await RetrieveBlockData(Blocks[i]);
@@ -108,6 +108,14 @@ async function fetchAccountHistory(
         slot: Number(metadata.slot),
       });
     }
+
+    fetched.sort((a, b) => {
+      if (a.slot > b.slot) {
+        return -1;
+      } else {
+        return 1;
+      }
+    });
     
     /*
     const connection = new Connection(url);
@@ -122,7 +130,7 @@ async function fetchAccountHistory(
       foundOldest: fetched.length < options.limit,
     };
 
-    console.log(history)
+    console.log(history);
 
     status = FetchStatus.Fetched;
   } catch (error) {
@@ -184,8 +192,7 @@ export function useFetchAccountHistory() {
       const before = state.entries[pubkey.toBase58()];
       if (!refresh && before?.data?.fetched && before.data.fetched.length > 0) {
         if (before.data.foundOldest) return;
-        const oldest =
-          before.data.fetched[before.data.fetched.length - 1].signature;
+        const oldest = before.data.fetched[before.data.fetched.length - 1].signature;
         fetchAccountHistory(dispatch, pubkey, cluster, url, {
           before: oldest,
           start: before.data.fetched.length,
