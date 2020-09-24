@@ -2,17 +2,24 @@ import React from "react";
 import * as Sentry from "@sentry/react";
 import {
   PublicKey,
+  TransactionError,
   ConfirmedSignatureInfo,
   TransactionSignature,
   Connection,
 } from "@solana/web3.js";
-import { RetrieveBlockByBlockhash, RetrieveBlocksFromAccount, RetrieveBlockData } from '@theronin/solarweave';
+import { RetrieveAccount } from '@theronin/solarweave';
 import { useCluster, Cluster } from "../cluster";
 import * as Cache from "providers/cache";
 import { ActionType, FetchStatus } from "providers/cache";
 
+export const SolarweaveDatabase = 'solarweave-cache-devnet-testrun4-index';
+
+interface FetchedInformation extends ConfirmedSignatureInfo {
+  cursor: string;
+}
+
 type AccountHistory = {
-  fetched: ConfirmedSignatureInfo[];
+  fetched: FetchedInformation[];
   foundOldest: boolean;
 };
 
@@ -25,15 +32,15 @@ type State = Cache.State<AccountHistory>;
 type Dispatch = Cache.Dispatch<HistoryUpdate>;
 
 function combineFetched(
-  fetched: ConfirmedSignatureInfo[],
-  current: ConfirmedSignatureInfo[] | undefined,
-  before: TransactionSignature | undefined
+  fetched: FetchedInformation[],
+  current: FetchedInformation[] | undefined,
+  before: string | undefined
 ) {
   if (current === undefined) {
     return fetched;
   }
 
-  if (current.length > 0 && current[current.length - 1].signature === before) {
+  if (current.length > 0 && current[current.length - 1].cursor === before) {
     return current.concat(fetched);
   } else {
     return fetched;
@@ -81,7 +88,7 @@ async function fetchAccountHistory(
   pubkey: PublicKey,
   cluster: Cluster,
   url: string,
-  options: { before?: TransactionSignature; start?: number; limit: number }
+  options: { before?: string; start?: number; limit: number }
 ) {
   dispatch({
     type: ActionType.Update,
@@ -96,16 +103,23 @@ async function fetchAccountHistory(
   try {
     const startingIndex = options.start ? options.start : 0;
     const fetched = [];
-    const Blocks = await RetrieveBlocksFromAccount(pubkey.toString(), 'solarweave-explorer-test2-index');
+    const Blocks = await RetrieveAccount(pubkey.toString(), options.limit, options.before ? options.before : '', SolarweaveDatabase);
 
-    for (let i = startingIndex; i < Blocks.length && i < (startingIndex + options.limit); i++) {
-      const metadata = await RetrieveBlockData(Blocks[i]);
+    for (let i = 0; i < Blocks.length; i++) {
+      const Block = Blocks[i];
+      const tags: any = {};
+
+      for (let ii = 0; ii < Block.node.tags.length; ii++) {
+        const tag = Block.node.tags[ii];
+        tags[tag.name] = tag.value;
+      }
 
       fetched.push({
         err: null,
         memo: null,
-        signature: metadata.defaultSignature,
-        slot: Number(metadata.slot),
+        signature: tags.defaultSignature ? tags.defaultSignature : '',
+        slot: tags.slot ? Number(tags.slot) : -1,
+        cursor: Block.cursor,
       });
     }
 
@@ -117,20 +131,10 @@ async function fetchAccountHistory(
       }
     });
     
-    /*
-    const connection = new Connection(url);
-    const fetched = await connection.getConfirmedSignaturesForAddress2(
-      pubkey,
-      options
-    );
-    */
-
     history = {
       fetched,
       foundOldest: fetched.length < options.limit,
     };
-
-    console.log(history);
 
     status = FetchStatus.Fetched;
   } catch (error) {
@@ -190,11 +194,12 @@ export function useFetchAccountHistory() {
   return React.useCallback(
     (pubkey: PublicKey, refresh?: boolean) => {
       const before = state.entries[pubkey.toBase58()];
+
       if (!refresh && before?.data?.fetched && before.data.fetched.length > 0) {
         if (before.data.foundOldest) return;
-        const oldest = before.data.fetched[before.data.fetched.length - 1].signature;
+        const lastCursor = before.data.fetched[before.data.fetched.length - 1].cursor;
         fetchAccountHistory(dispatch, pubkey, cluster, url, {
-          before: oldest,
+          before: lastCursor,
           start: before.data.fetched.length,
           limit: 5,
         });
