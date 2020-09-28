@@ -122,14 +122,6 @@ async function fetchAccountHistory(
         cursor: Block.cursor,
       });
     }
-
-    fetched.sort((a, b) => {
-      if (a.slot > b.slot) {
-        return -1;
-      } else {
-        return 1;
-      }
-    });
     
     history = {
       fetched,
@@ -191,8 +183,7 @@ export function useFetchAccountHistory() {
     );
   }
 
-  return React.useCallback(
-    (pubkey: PublicKey, refresh?: boolean) => {
+  return React.useCallback((pubkey: PublicKey, refresh?: boolean) => {
       const before = state.entries[pubkey.toBase58()];
 
       if (!refresh && before?.data?.fetched && before.data.fetched.length > 0) {
